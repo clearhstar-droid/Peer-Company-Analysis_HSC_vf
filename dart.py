@@ -28,6 +28,7 @@ carries the same fixes, don't reintroduce them:
 
 import io
 import os
+import time
 import re
 import zipfile
 
@@ -69,10 +70,27 @@ def _load_corp_code_map(api_key: str) -> list[dict]:
     if _corp_code_cache is not None:
         return _corp_code_cache
 
-    res = requests.get(
-        "https://opendart.fss.or.kr/api/corpCode.xml", params={"crtfc_key": api_key}, timeout=30
-    )
-    res.raise_for_status()
+    # This ~3.6MB download has been observed to intermittently time out from
+    # Streamlit Cloud (Korean gov server + overseas host = occasional slow
+    # path) even though it succeeds on a retry — so retry a couple of times
+    # with a generous timeout before giving up.
+    last_err: Exception | None = None
+    res = None
+    for attempt in range(3):
+        try:
+            res = requests.get(
+                "https://opendart.fss.or.kr/api/corpCode.xml",
+                params={"crtfc_key": api_key},
+                timeout=60,
+            )
+            res.raise_for_status()
+            last_err = None
+            break
+        except requests.RequestException as err:
+            last_err = err
+            time.sleep(1.5 * (attempt + 1))
+    if last_err is not None or res is None:
+        raise last_err or RuntimeError("corpCode.xml 요청 실패")
     with zipfile.ZipFile(io.BytesIO(res.content)) as zf:
         xml = zf.read(zf.namelist()[0]).decode("utf-8")
 
@@ -119,7 +137,7 @@ def _fetch_statement_with_div(api_key: str, corp_code: str, year: int, reprt_cod
             "reprt_code": reprt_code,
             "fs_div": fs_div,
         },
-        timeout=20,
+        timeout=30,
     )
     if not res.ok:
         return None
