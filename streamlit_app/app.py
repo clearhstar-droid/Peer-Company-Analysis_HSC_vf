@@ -141,6 +141,7 @@ companies = st.session_state.selected_companies
 
 # source status badges
 badge_html = ""
+error_notes = []
 for cid in companies:
     info = sources.get(cid)
     if not info:
@@ -149,8 +150,17 @@ for cid in companies:
     status_label = {"live": "실시간", "partial": "실시간 일부", "mock": "샘플", "error": "연동 오류"}[info.status]
     cls = "tag accent" if info.status in ("live", "partial") else "tag"
     extra = f" ({info.live_quarter_count}/{info.total_quarter_count}분기)" if info.status == "partial" else ""
-    badge_html += f'<span class="{cls}">{COMPANY_MAP[cid].name_ko} · {label} {status_label}{extra}</span>'
+    title = " / ".join(info.notes).replace('"', "'")
+    badge_html += f'<span class="{cls}" title="{title}">{COMPANY_MAP[cid].name_ko} · {label} {status_label}{extra}</span>'
+    if info.notes:
+        error_notes.append((COMPANY_MAP[cid].name_ko, info.notes))
 st.markdown(badge_html, unsafe_allow_html=True)
+
+if error_notes:
+    with st.expander("⚠ 연동 오류/알림 상세 보기"):
+        for name, notes in error_notes:
+            for n in notes:
+                st.write(f"- **{name}**: {n}")
 
 st.divider()
 
